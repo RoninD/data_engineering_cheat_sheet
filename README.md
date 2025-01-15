@@ -4,6 +4,7 @@
 - [2. Documentation Links](#2-documentation-links)
 - [3. Tutorials](#3-tutorials)
 - [4. Cheat Sheets](#4-cheat-sheets)
+  - [Pyspark Structured Streaming Triggers](#pyspark-structured-streaming-triggers)
   - [4.1. Databricks Python API vs SQL](#41-databricks-python-api-vs-sql)
   - [4.2. Pyspark Dataframe API vs SQL](#42-pyspark-dataframe-api-vs-sql)
 - [5. Snippets](#5-snippets)
@@ -34,10 +35,52 @@
 # 3. Tutorials
 
 - [Writing a Kafka Stream to Delta Lake with Spark Structured Streaming](https://delta.io/blog/write-kafka-stream-to-delta-lake/)
+- [Mock Kafka Stream](https://rmoff.net/2018/05/10/quick-n-easy-population-of-realistic-test-data-into-kafka/)
 
 # 4. Cheat Sheets
 
 - [Github pyspark-cheatsheet project](https://github.com/cartershanklin/pyspark-cheatsheet)
+
+## [Pyspark Structured Streaming Triggers](https://spark.apache.org/docs/latest/api/python/reference/pyspark.ss/api/pyspark.sql.streaming.DataStreamWriter.trigger.html)
+
+https://medium.com/@kiranvutukuri/trigger-modes-in-apache-spark-structured-streaming-part-6-91107a69de39
+
+
+
+Minimal test code
+
+```python
+df = spark.readStream.format("kafka")\
+    .option("kafka.bootstrap.servers", "localhost:9092")\
+    .option("subscribe", "espresso-machine-events")\
+    .option("startingOffsets", "earliest")\
+    .load()
+    .option("maxOffsetsPerTrigger", 5)\
+df = df.selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)", "timestamp")
+
+# Define the streaming query and output to the console
+query = df.writeStream\
+    .outputMode("append")\
+    .format("console")\
+    .trigger(continuous="1 second")\
+    .trigger(once=True)\
+    .trigger(availableNow=True)\
+    .trigger(processingTime="2 seconds")\
+    .option("checkpointLocation", str(data_path / "tmp/checkpoints/processingTime"))\
+    .start()
+```
+
+**Messages created with 1 sample/s**
+
+| **Trigger Mode**                        | **Checkpoint**                                | **maxOffsetsPerTrigger** | **Output**                                                                                                                                                         |
+| --------------------------------------- | --------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `trigger(once=True)`                    | No                                            | Ignored                  | Entire topic content in Batch 0                                                                                                                                    |
+| `trigger(once=True)`                    | Yes                                           | Ignored                  | Batch 0: Entire topic at runtime.<br>Batch 1: created after Batch 0.                                                                                               |
+| ``trigger(availableNow=True)``          | N/A                                           | 5                        | 5 elements per batch. Terminates with the last available offset at the time of starting the query                                                                  |
+| ``trigger(processingTime="5 seconds")`` | N/A                                           | 2                        | Triggers a batch every 5 seconds. Each batch contains only 2 elements.                                                                                             |
+| ``trigger(processingTime="5 seconds")`` | N/A                                           | 10                       | Triggers a batch every 5 seconds. Each batch all new available elements, since 10 maxOffsetsPerTrigger accomodate all new messages generated since the last batch. |
+| ``trigger(continuous="1 second")``      | Created automatically in /tmp if not provided | Ignored                  | Running continously to process each message with low latency. Decides on its own how many messages to put into each batch                                          |
+
 
 ## 4.1. Databricks Python API vs SQL
 
